@@ -9,12 +9,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.location.LocationManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -51,6 +53,8 @@ public class DevicesFragment extends ListFragment {
     private BluetoothAdapter bluetoothAdapter;
     private final ArrayList<BluetoothUtil.Device> listItems = new ArrayList<>();
     private ArrayAdapter<BluetoothUtil.Device> listAdapter;
+    private SharedPreferences sharedPreferences;
+
     ActivityResultLauncher<String[]> requestBluetoothPermissionLauncherForStartScan;
     ActivityResultLauncher<String> requestLocationPermissionLauncherForStartScan;
 
@@ -102,6 +106,7 @@ public class DevicesFragment extends ListFragment {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setHasOptionsMenu(true);
+        sharedPreferences = getActivity().getSharedPreferences("prefs", Context.MODE_PRIVATE);
         if(getActivity().getPackageManager().hasSystemFeature(PackageManager.FEATURE_BLUETOOTH))
             bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         listAdapter = new ArrayAdapter<BluetoothUtil.Device>(getActivity(), 0, listItems) {
@@ -226,12 +231,6 @@ public class DevicesFragment extends ListFragment {
             } catch(Exception ignored) {}
             if(!locationEnabled)
                 scanState = ScanState.DISCOVERY;
-            // Starting with Android 6.0 a bluetooth scan requires ACCESS_COARSE_LOCATION permission, but that's not all!
-            // LESCAN also needs enabled 'location services', whereas DISCOVERY works without.
-            // Most users think of GPS as 'location service', but it includes more, as we see here.
-            // Instead of asking the user to enable something they consider unrelated,
-            // we fall back to the older API that scans for bluetooth classic _and_ LE
-            // sometimes the older API returns less results or slower
         }
         scanState = nextScanState;
         listItems.clear();
@@ -242,7 +241,7 @@ public class DevicesFragment extends ListFragment {
         if(scanState == ScanState.LE_SCAN) {
             leScanStopHandler.postDelayed(leScanStopCallback, LE_SCAN_PERIOD);
             new Thread(() -> bluetoothAdapter.startLeScan(null, leScanCallback), "startLeScan")
-                    .start(); // start async to prevent blocking UI, because startLeScan sometimes take some seconds
+                    .start();
         } else {
             bluetoothAdapter.startDiscovery();
         }
@@ -252,7 +251,7 @@ public class DevicesFragment extends ListFragment {
     private void updateScan(BluetoothDevice device) {
         if(scanState == ScanState.NONE)
             return;
-        BluetoothUtil.Device device2 = new BluetoothUtil.Device(device); // slow getName() only once
+        BluetoothUtil.Device device2 = new BluetoothUtil.Device(device);
         int pos = Collections.binarySearch(listItems, device2);
         if (pos < 0) {
             listItems.add(-pos - 1, device2);
@@ -278,7 +277,6 @@ public class DevicesFragment extends ListFragment {
                 bluetoothAdapter.cancelDiscovery();
                 break;
             default:
-                // already canceled
         }
         scanState = ScanState.NONE;
 
@@ -288,6 +286,7 @@ public class DevicesFragment extends ListFragment {
     public void onListItemClick(@NonNull ListView l, @NonNull View v, int position, long id) {
         stopScan();
         BluetoothUtil.Device device = listItems.get(position-1);
+        sharedPreferences.edit().putString("last_device", device.getDevice().getAddress()).apply();
         Bundle args = new Bundle();
         args.putString("device", device.getDevice().getAddress());
         Fragment fragment = new TerminalFragment();

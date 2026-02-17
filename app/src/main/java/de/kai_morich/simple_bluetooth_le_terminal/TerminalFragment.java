@@ -43,6 +43,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     private TextView receiveText;
     private TextView sendText;
     private TextUtil.HexWatcher hexWatcher;
+    private MenuItem connectDisconnectMenuItem;
 
     private Connected connected = Connected.False;
     private boolean initialStart = true;
@@ -105,6 +106,9 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             initialStart = false;
             getActivity().runOnUiThread(this::connect);
         }
+        if (getActivity() != null) {
+            getActivity().invalidateOptionsMenu();
+        }
     }
 
     @Override
@@ -146,8 +150,10 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     @Override
     public void onCreateOptionsMenu(@NonNull Menu menu, MenuInflater inflater) {
         inflater.inflate(R.menu.menu_terminal, menu);
+        connectDisconnectMenuItem = menu.findItem(R.id.connect_disconnect);
     }
 
+    @Override
     public void onPrepareOptionsMenu(@NonNull Menu menu) {
         menu.findItem(R.id.hex).setChecked(hexEnabled);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -156,6 +162,7 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             menu.findItem(R.id.backgroundNotification).setChecked(true);
             menu.findItem(R.id.backgroundNotification).setEnabled(false);
         }
+        updateConnectDisconnectIcon();
     }
 
     @Override
@@ -183,6 +190,13 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             sendText.setHint(hexEnabled ? "HEX mode" : "");
             item.setChecked(hexEnabled);
             return true;
+        } else if (id == R.id.connect_disconnect) {
+            if (connected == Connected.True) {
+                disconnect();
+            } else if (connected == Connected.False) {
+                connect();
+            }
+            return true;
         } else if (id == R.id.backgroundNotification) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (!service.areNotificationsEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -197,6 +211,18 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
         }
     }
 
+    private void updateConnectDisconnectIcon() {
+        if (connectDisconnectMenuItem != null) {
+            if (connected == Connected.True) {
+                connectDisconnectMenuItem.setIcon(R.drawable.ic_baseline_plug_connected_24);
+            } else if (connected == Connected.Pending) {
+                connectDisconnectMenuItem.setIcon(R.drawable.ic_baseline_ble_disconnected_24);
+            } else {
+                connectDisconnectMenuItem.setIcon(R.drawable.ic_baseline_plug_disconnected_24);
+            }
+        }
+    }
+
     /*
      * Serial + UI
      */
@@ -208,17 +234,20 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
             connected = Connected.Pending;
             SerialSocket socket = new SerialSocket(getActivity().getApplicationContext(), device);
             service.connect(socket);
+            updateConnectDisconnectIcon();
         } catch (Exception e) {
             onSerialConnectError(e);
         }
     }
 
     private void disconnect() {
-        connected = Connected.False;
+        connected = Connected.Pending;
+        status("disconnecting...");
+        updateConnectDisconnectIcon();
         service.disconnect();
     }
 
-    private void send(String str) {
+    public void send(String str) {
         if(connected != Connected.True) {
             Toast.makeText(getActivity(), "not connected", Toast.LENGTH_SHORT).show();
             return;
@@ -304,12 +333,14 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     public void onSerialConnect() {
         status("connected");
         connected = Connected.True;
+        updateConnectDisconnectIcon();
     }
 
     @Override
     public void onSerialConnectError(Exception e) {
         status("connection failed: " + e.getMessage());
-        disconnect();
+        connected = Connected.False;
+        updateConnectDisconnectIcon();
     }
 
     @Override
@@ -326,7 +357,8 @@ public class TerminalFragment extends Fragment implements ServiceConnection, Ser
     @Override
     public void onSerialIoError(Exception e) {
         status("connection lost: " + e.getMessage());
-        disconnect();
+        connected = Connected.False;
+        updateConnectDisconnectIcon();
     }
 
 }

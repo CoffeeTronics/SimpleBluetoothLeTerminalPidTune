@@ -115,7 +115,6 @@ class SerialSocket extends BluetoothGattCallback {
 
     void disconnect() {
         Log.d(TAG, "disconnect");
-        listener = null; // ignore remaining data and errors
         device = null;
         canceled = true;
         synchronized (writeBuffer) {
